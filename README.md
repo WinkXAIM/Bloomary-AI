@@ -13,4 +13,4 @@
 2. **develop**: 개발 통합 브랜치 
 3. **feature/기능명**: 각자 맡은 기능을 개발하는 작업 공간
    - 예: `feature/server-model`, `feature/llm-logic`
-   - 작업 완료 시 `develop` 브랜치로 **Pull Request(PR)**를 날려주세요.
+   - 작업 완료 시 `develop` 브랜치로 Pull Request(PR)를 날려주세요.
