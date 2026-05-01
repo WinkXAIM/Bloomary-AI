@@ -10,7 +10,6 @@
 
 ## Branch Strategy
 1. **main**: 최종 배포 브랜치 
-2. **develop**: 개발 통합 브랜치 
-3. **feature/기능명**: 각자 맡은 기능을 개발하는 작업 공간
-   - 예: `feature/server-model`, `feature/llm-logic`
-   - 작업 완료 시 `develop` 브랜치로 Pull Request(PR)를 날려주세요.
+2. **feature/이슈번호-기능명**: 각자 맡은 기능을 개발하는 작업 공간
+   - 예: `feature/1-yolov8-fastapi`, `feature/2-llm-prompt`
+   - 작업 완료 시 `main` 브랜치로 Pull Request(PR)를 날려주세요.
