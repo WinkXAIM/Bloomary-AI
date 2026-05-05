@@ -1,4 +1,4 @@
-# Flowary-AI
+# Bloomary-AI
 
 ## Directory Structure
 - **data/**: 프로젝트에 필요한 데이터 보관
