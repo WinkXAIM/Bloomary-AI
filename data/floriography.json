@@ -1,90 +1,408 @@
 {
-    "alstroemeria": "",
-    "amaryllis": "",
-    "anthurium": "",
-    "azalea": "",
-    "bee_balm": "",
-    "bellflower": "",
-    "blackberry_lily": "",
-    "blanket_flower": "",
-    "bougainvillea": "",
-    "bromeliad": "",
-    "calla_lily": "",
-    "camellia": "",
-    "canna_lily": "",
-    "canterbury_bells": "",
-    "cape_flower": "",
-    "carnation": "",
-    "cattleya": "",
-    "celosia": "",
-    "chamomile": "",
-    "chrysanthemum": "",
-    "clematis": "",
-    "columbine": "",
-    "coneflower": "",	
-    "cosmos": "",
-    "cyclamen": "",	
-    "daffodil":	"",
-    "dahlia": "",
-    "daisy": "",	
-    "desert_rose": "",
-    "doraji": "",
-    "eryngo": "",	
-    "feather_celosia": "",	
-    "foxglove": "",	
-    "freesia": "",	
-    "fritillaria": "",
-    "garden_phlox": "",	
-    "gaura": "",	
-    "gazania": "",	
-    "gentian": "",	
-    "geranium": "",	
-    "gladiolus": "",	
-    "globe_thistle": "",	
-    "gloriosa_lily": "",	
-    "gyeongyeopduran": "",
-    "gypsophila": "",	
-    "hellebores": "",	
-    "hibiscus": "",	
-    "hyacinth": "",	
-    "hydrangea": "",	
-    "iris": "",	
-    "ixora": "",	
-    "japanese_anemone": "",	
-    "kalanchoe": "",	
-    "lily": "",	
-    "lisianthus": "",	
-    "magnolia": "",	
-    "marigold": "",	
-    "masterwort": "",	
-    "mexican_petunia": "",	
-    "monkshood": "",	
-    "morning_glory": "",	
-    "mulmangcho": "",	
-    "nasturtium": "",
-    "nigella": "",
-    "orchid": "",	
-    "osteospermum": "",	
-    "pansy": "",
-    "passion_flower": "",
-    "peony": "",	
-    "petunia": "",	
-    "pincushion_flower": "",	
-    "pink_primrose": "",	
-    "plumeria": "",	
-    "poinsettia": "",	
-    "poppy": "",	
-    "primula": "",
-    "red_ginger": "",	
-    "rose": "",	
-    "sampaguita": "",
-    "silverbush": "",	
-    "spring_crocus": "",	
-    "stock": "",	
-    "sunflower": "",	
-    "sweet_pea": "",
-    "sweet_william": "",	
-    "trumpet_creeper": "",	
-    "tulip": "",	
-    "wallflower": ""
+  "alstroemeria": [
+    "mutual support",
+    "devotion",
+    "strength"
+  ],
+  "amaryllis": [
+    "수다쟁이",
+    "눈부신 아름다움"
+  ],
+  "anthurium": [
+    "불타는 마음"
+  ],
+  "azalea": [
+    "사랑의 기쁨",
+    "절제",
+    "정열",
+    "명예"
+  ],
+  "bee_balm": [
+    "good health",
+    "protection from evil",
+    "money",
+    "strong emotions",
+    "enthusiasm"
+  ],
+  "bellflower": [],
+  "blackberry_lily": [
+    "this event",
+    "early modern cultures"
+  ],
+  "blanket_flower": [
+    "resistance",
+    "unity",
+    "hope",
+    "Aesthetic Movement",
+    "Spiritualist Church",
+    "for many reasons"
+  ],
+  "bougainvillea": [
+    "정열"
+  ],
+  "bromeliad": [],
+  "calla_lily": [
+    "Elegance",
+    "purity"
+  ],
+  "camellia": [
+    "Admiration",
+    "perfection"
+  ],
+  "canna_lily": [],
+  "canterbury_bells": [],
+  "cape_flower": [],
+  "carnation": [
+    "무욕",
+    "평정",
+    "Love",
+    "fascination"
+  ],
+  "cattleya": [
+    "당신은 미인입니다."
+  ],
+  "celosia": [
+    "longevity and",
+    "poetically",
+    "with death",
+    "immortality",
+    "시들지 않는 사랑",
+    "열정"
+  ],
+  "chamomile": [
+    "patience in adversity"
+  ],
+  "chrysanthemum": [
+    "청결",
+    "정조",
+    "순결",
+    "Friendship",
+    "joy",
+    "honesty"
+  ],
+  "clematis": [
+    "바람과 함께 사라지다",
+    "당신의 마음은 아름답다",
+    "진실로 아름다운 마음",
+    "아름다운 당신의 마음",
+    "아름다운 마음"
+  ],
+  "columbine": [
+    "부지런"
+  ],
+  "coneflower": [
+    "영원한 행복"
+  ],
+  "cosmos": [
+    "love",
+    "passion"
+  ],
+  "cyclamen": [
+    "compassion",
+    "reserved love",
+    "faithfulness",
+    "strong emotions",
+    "beauty",
+    "love"
+  ],
+  "daffodil": [
+    "자만심",
+    "자존심",
+    "자신만을 사랑하다",
+    "Rebirth",
+    "new beginnings"
+  ],
+  "dahlia": [
+    "감사",
+    "우아",
+    "lasting bond",
+    "commitment"
+  ],
+  "daisy": [
+    "Innocence",
+    "purity",
+    "new beginnings"
+  ],
+  "desert_rose": [],
+  "doraji": [
+    "변치 않는 사랑",
+    "성실",
+    "유순함"
+  ],
+  "eryngo": [
+    "admiration"
+  ],
+  "feather_celosia": [
+    "longevity and",
+    "poetically",
+    "with death",
+    "immortality"
+  ],
+  "foxglove": [
+    "femininity",
+    "gentleness",
+    "sensitivity",
+    "love",
+    "admiration",
+    "gratitude"
+  ],
+  "freesia": [
+    "순결",
+    "순진한 마음",
+    "trust",
+    "friendship",
+    "thoughtfulness"
+  ],
+  "fritillaria": [
+    "beauty",
+    "purity in women",
+    "bravery",
+    "perseverance",
+    "Easter",
+    "Lilium candidum",
+    "박애",
+    "신비로움",
+    "박해",
+    "겸손"
+  ],
+  "garden_phlox": [
+    "열정",
+    "청춘의 기쁨"
+  ],
+  "gaura": [],
+  "gazania": [],
+  "gentian": [
+    "슬퍼하는 당신을 사랑해"
+  ],
+  "geranium": [
+    "good health",
+    "positive emotions",
+    "well wishes"
+  ],
+  "gladiolus": [
+    "Strength of character"
+  ],
+  "globe_thistle": [
+    "동심"
+  ],
+  "gloriosa_lily": [
+    "longevity",
+    "eternity",
+    "spiritual themes",
+    "광명"
+  ],
+  "gyeongyeopduran": [],
+  "gypsophila": [],
+  "hellebores": [
+    "불안함을 진정시켜주세요"
+  ],
+  "hibiscus": [
+    "perfect woman or wife"
+  ],
+  "hyacinth": [
+    "마음의 기쁨",
+    "승리",
+    "Sincerity",
+    "constancy"
+  ],
+  "hydrangea": [
+    "냉정",
+    "무정",
+    "거만",
+    "gratitude",
+    "understanding"
+  ],
+  "iris": [
+    "좋은 소식",
+    "변덕스러움",
+    "Faith",
+    "wisdom",
+    "hope"
+  ],
+  "ixora": [],
+  "japanese_anemone": [
+    "고독",
+    "정조",
+    "성실"
+  ],
+  "kalanchoe": [
+    "love"
+  ],
+  "lily": [
+    "순결",
+    "깨끗한 마음",
+    "Purity",
+    "virtue",
+    "devotion"
+  ],
+  "lisianthus": [
+    "confidence",
+    "charisma",
+    "charm"
+  ],
+  "magnolia": [
+    "endurance",
+    "good luck",
+    "good fortune",
+    "long lasting relationships",
+    "romance"
+  ],
+  "marigold": [
+    "Joy",
+    "warmth",
+    "creativity"
+  ],
+  "masterwort": [],
+  "mexican_petunia": [
+    "변화",
+    "치유",
+    "지혜"
+  ],
+  "monkshood": [],
+  "morning_glory": [
+    "풋사랑",
+    "덧없는 사랑",
+    "기쁨"
+  ],
+  "mulmangcho": [
+    "\"true love memories",
+    "나를 잊지 말아요"
+  ],
+  "nasturtium": [
+    "conquest",
+    "patriotism"
+  ],
+  "nigella": [
+    "꿈 길의 애정",
+    "꿈",
+    "환상",
+    "꿈길의 애정"
+  ],
+  "orchid": [
+    "인내",
+    "Exotic beauty",
+    "strength"
+  ],
+  "osteospermum": [
+    "원기",
+    "행복",
+    "간절한 그리움"
+  ],
+  "pansy": [
+    "쾌활한 마음",
+    "나를 생각해 주세요."
+  ],
+  "passion_flower": [
+    "crucifixion of Jesus",
+    "different aspects of the crucifixion",
+    "five wounds",
+    "as well",
+    "crown of thorns",
+    "three nails"
+  ],
+  "peony": [
+    "수줍음",
+    "Prosperity",
+    "good fortune"
+  ],
+  "petunia": [
+    "passionate love"
+  ],
+  "pincushion_flower": [
+    "Inuit identity",
+    "uniquely female art",
+    "prestigious society whose roots extend",
+    "\"continuity in identity",
+    "사랑을 잃다",
+    "운치"
+  ],
+  "pink_primrose": [
+    "Young love",
+    "eternal love"
+  ],
+  "plumeria": [
+    "positivity",
+    "energy",
+    "warmth",
+    "immortality"
+  ],
+  "poinsettia": [
+    "joy",
+    "festivity",
+    "diversity",
+    "good cheer",
+    "success"
+  ],
+  "poppy": [
+    "위안",
+    "Restful sleep",
+    "consolation"
+  ],
+  "primula": [],
+  "red_ginger": [
+    "by white in Australia",
+    "evil",
+    "infidelity in Japan",
+    "by yellow in France",
+    "by white in East Asia",
+    "black in the US"
+  ],
+  "rose": [
+    "열렬한 사랑",
+    "질투",
+    "순결",
+    "Love",
+    "passion",
+    "beauty"
+  ],
+  "sampaguita": [],
+  "silverbush": [
+    "영원한 사랑",
+    "신비로움"
+  ],
+  "spring_crocus": [
+    "믿는 기쁨",
+    "청춘의 기쁨"
+  ],
+  "stock": [
+    "passion",
+    "romantic love"
+  ],
+  "sunflower": [
+    "동경",
+    "숭배",
+    "Adoration",
+    "loyalty"
+  ],
+  "sweet_pea": [
+    "기쁨",
+    "가련",
+    "Pleasure",
+    "gratitude"
+  ],
+  "sweet_william": [
+    "friendship",
+    "both the blood of Christ",
+    "intensity of romantic love",
+    "chastity",
+    "death",
+    "darkness"
+  ],
+  "trumpet_creeper": [
+    "beauty",
+    "femininity",
+    "young love",
+    "Hawaiian culture",
+    "Aloha spirit"
+  ],
+  "tulip": [
+    "자애",
+    "명성",
+    "명예",
+    "Perfect love",
+    "elegance"
+  ],
+  "wallflower": [
+    "offered to some deities"
+  ]
 }
