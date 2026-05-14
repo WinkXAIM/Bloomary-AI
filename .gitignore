@@ -15,4 +15,12 @@ datasets/
 
 .env           
 .vscode/      
-.idea/        
+.idea/ 
+
+# local test images / outputs
+test/*.jpg
+test/*.jpeg
+test/*.png
+test/*.webp
+test/*.json
+test/*annotated*
