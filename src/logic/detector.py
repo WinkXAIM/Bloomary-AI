@@ -130,10 +130,16 @@ def load_image_from_bytes(image_bytes: bytes) -> Image.Image:
     image = ImageOps.exif_transpose(image)
     return image.convert("RGB")
 
-
 # ============================================================
 # 이름 처리
 # ============================================================
+
+def normalize_name_en(name_en: str) -> str:
+    name_en = str(name_en or "").strip().lower()
+    name_en = name_en.replace("-", "_").replace(" ", "_")
+    name_en = re.sub(r"[^a-z_]", "", name_en)
+    name_en = re.sub(r"_+", "_", name_en).strip("_")
+    return name_en
 
 def resolve_name_ko(name_en: str, gemini_name_ko: str = "") -> str:
     """
@@ -142,14 +148,13 @@ def resolve_name_ko(name_en: str, gemini_name_ko: str = "") -> str:
     2순위: Gemini가 준 name_ko
     3순위: 빈 문자열
     """
-    name_en = str(name_en or "").strip()
+    name_en = normalize_name_en(name_en)
     gemini_name_ko = str(gemini_name_ko or "").strip()
 
     if name_en in FLOWER_NAME_KO_MAP:
         return FLOWER_NAME_KO_MAP[name_en]
 
     return gemini_name_ko
-
 
 # ============================================================
 # Gemini 응답 JSON 파싱
@@ -182,7 +187,6 @@ def parse_gemini_json_list(text: str) -> List[Dict[str, Any]]:
         return []
 
     return data
-
 
 # ============================================================
 # YOLO 결과를 Gemini 프롬프트용 JSON으로 변환
@@ -233,7 +237,6 @@ def get_json_for_llm(results: Any) -> List[Dict[str, Any]]:
 
     return yolo_json
 
-
 # ============================================================
 # 좌표 처리
 # ============================================================
@@ -269,6 +272,100 @@ def clip_box2d(
 
     return [x1, y1, x2, y2]
 
+def box_area(box):
+    x1, y1, x2, y2 = box
+    return max(0, x2 - x1) * max(0, y2 - y1)
+
+def box_intersection(a, b):
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+
+    x1 = max(ax1, bx1)
+    y1 = max(ay1, by1)
+    x2 = min(ax2, bx2)
+    y2 = min(ay2, by2)
+
+    return max(0, x2 - x1) * max(0, y2 - y1)
+
+def box_iou(a, b):
+    inter = box_intersection(a, b)
+    union = box_area(a) + box_area(b) - inter
+
+    if union <= 0:
+        return 0
+
+    return inter / union
+
+def min_overlap_ratio(a, b):
+    """
+    작은 박스가 큰 박스 안에 거의 들어간 경우도 중복으로 보기 위한 값
+    """
+    inter = box_intersection(a, b)
+    min_area = min(box_area(a), box_area(b))
+
+    if min_area <= 0:
+        return 0
+
+    return inter / min_area
+
+def dedupe_same_object(detected_objects, iou_thresh=0.82, contain_thresh=0.90):
+    """
+    같은 꽃을 여러 클래스가 잡은 경우 하나만 남김.
+    거의 같은 bbox가 겹치는 케이스 제거용.
+    """
+    result = []
+
+    for obj in detected_objects:
+        box = obj.get("box2d")
+
+        if not box or len(box) != 4:
+            continue
+
+        is_duplicate = False
+
+        for saved in result:
+            saved_box = saved.get("box2d")
+
+            if not saved_box or len(saved_box) != 4:
+                continue
+
+            iou = box_iou(box, saved_box)
+            contain = min_overlap_ratio(box, saved_box)
+
+            if iou >= iou_thresh or contain >= contain_thresh:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            result.append(obj)
+
+    return result
+
+def dedupe_by_flower_name(detected_objects):
+    """
+    같은 꽃 이름(name_en)이 여러 번 나온 경우 하나만 남김.
+    대표 박스는 bbox 면적이 가장 큰 객체로 선택.
+    """
+    best_by_name = {}
+
+    for obj in detected_objects:
+        name_en = normalize_name_en(obj.get("name_en", ""))
+        box = obj.get("box2d")
+
+        if not name_en or not box or len(box) != 4:
+            continue
+
+        if name_en not in best_by_name:
+            best_by_name[name_en] = obj
+            continue
+
+        current_area = box_area(box)
+        saved_area = box_area(best_by_name[name_en].get("box2d", [0, 0, 0, 0]))
+
+        if current_area > saved_area:
+            best_by_name[name_en] = obj
+
+    return list(best_by_name.values())
 
 # ============================================================
 # 대표 색상 HEX 추출
@@ -277,7 +374,6 @@ def clip_box2d(
 def bgr_to_hex(bgr: np.ndarray) -> str:
     b, g, r = [int(v) for v in bgr]
     return f"#{r:02X}{g:02X}{b:02X}"
-
 
 def extract_dominant_flower_color_hex(
     image_pil: Image.Image,
@@ -288,11 +384,12 @@ def extract_dominant_flower_color_hex(
     bbox 내부에서 대표 꽃 색상을 HEX로 추출.
 
     방식:
-    1. bbox crop
-    2. 초록색 계열 제거해서 줄기/잎 영향 줄이기
-    3. 너무 어두운 픽셀 제거
-    4. 남은 픽셀에 k-means 적용
-    5. 가장 큰 클러스터의 중심색을 HEX로 반환
+    1. bbox crop 후 가장자리 영역을 일부 제거해 배경/포장지 영향을 줄인다.
+    2. 중앙부 타원 마스크를 적용해 꽃 영역 후보를 우선적으로 사용한다.
+    3. HSV 기준으로 초록색 계열과 너무 어두운 픽셀을 제거한다.
+    4. 흰색/크림색 꽃은 채도가 낮고 밝기가 높은 픽셀을 우선 사용해 median 색상을 반환한다.
+    5. 일반 색상 꽃은 유효 픽셀에 k-means를 적용한다.
+    6. 클러스터 크기, 채도, 밝기를 함께 고려해 대표색을 선택하고 HEX로 반환한다.
     """
     image_rgb = np.array(image_pil.convert("RGB"))
     image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
@@ -316,12 +413,14 @@ def extract_dominant_flower_color_hex(
 
     crop_h, crop_w = crop.shape[:2]
 
-    # bbox 가장자리의 배경/포장지 영향을 약간 줄임
-    margin_x = int(crop_w * 0.05)
-    margin_y = int(crop_h * 0.05)
+    # bbox 가장자리 포장지/배경 영향 줄이기
+    margin_x = int(crop_w * 0.08)
+    margin_y = int(crop_h * 0.08)
 
-    if crop_w - 2 * margin_x > 5 and crop_h - 2 * margin_y > 5:
+    if crop_w - 2 * margin_x > 10 and crop_h - 2 * margin_y > 10:
         crop = crop[margin_y:crop_h - margin_y, margin_x:crop_w - margin_x]
+
+    crop_h, crop_w = crop.shape[:2]
 
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
 
@@ -329,28 +428,58 @@ def extract_dominant_flower_color_hex(
     s = hsv[:, :, 1]
     v = hsv[:, :, 2]
 
-    # OpenCV HSV 기준 H: 0~179
-    # 초록색 계열 제거: 줄기/잎 제외 목적
+    # 중앙부 위주로 보기 위한 타원 마스크
+    yy, xx = np.ogrid[:crop_h, :crop_w]
+    cx = (crop_w - 1) / 2
+    cy = (crop_h - 1) / 2
+    rx = max(crop_w * 0.48, 1)
+    ry = max(crop_h * 0.48, 1)
+
+    center_mask = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2 <= 1
+
+    # 줄기/잎 제거
     green_mask = (
         (h >= 35) & (h <= 90) &
         (s >= 35) &
         (v >= 35)
     )
 
-    # 너무 어두운 그림자 영역 제거
-    dark_mask = v < 35
+    # 너무 어두운 부분 제거
+    dark_mask = v < 45
 
-    valid_mask = (~green_mask) & (~dark_mask)
-    valid_pixels = crop[valid_mask]
+    base_mask = center_mask & (~green_mask) & (~dark_mask)
 
-    # 초록 제거 후 픽셀이 너무 적으면 어두운 픽셀만 제외하고 fallback
-    if len(valid_pixels) < 30:
-        valid_pixels = crop[~dark_mask]
+    if np.count_nonzero(base_mask) < 50:
+        base_mask = (~green_mask) & (~dark_mask)
+
+    if np.count_nonzero(base_mask) < 50:
+        base_mask = v >= 45
+
+    # 흰색 / 크림색 꽃 예외 처리
+    # 채도 낮고 밝은 픽셀을 꽃잎 후보로 봄
+    white_mask = base_mask & (s <= 65) & (v >= 145)
+
+    if np.count_nonzero(white_mask) >= max(80, int(np.count_nonzero(base_mask) * 0.18)):
+        white_pixels = crop[white_mask]
+
+        # 너무 어두운 흰색 그림자는 제외하고 밝은 쪽 픽셀만 사용
+        white_hsv = cv2.cvtColor(
+            white_pixels.reshape(-1, 1, 3),
+            cv2.COLOR_BGR2HSV
+        ).reshape(-1, 3)
+
+        brightness_cut = np.percentile(white_hsv[:, 2], 60)
+        white_pixels = white_pixels[white_hsv[:, 2] >= brightness_cut]
+
+        if len(white_pixels) > 0:
+            median_bgr = np.median(white_pixels, axis=0).astype(np.uint8)
+            return bgr_to_hex(median_bgr)
+
+    valid_pixels = crop[base_mask]
 
     if len(valid_pixels) < 30:
         return None
 
-    # 속도 최적화용 샘플링
     max_pixels = 8000
     if len(valid_pixels) > max_pixels:
         indices = np.random.choice(len(valid_pixels), max_pixels, replace=False)
@@ -380,13 +509,36 @@ def extract_dominant_flower_color_hex(
     )
 
     labels = labels.flatten()
-    counts = np.bincount(labels)
+    counts = np.bincount(labels, minlength=actual_k).astype(float)
 
-    dominant_idx = int(np.argmax(counts))
-    dominant_bgr = centers[dominant_idx].astype(np.uint8)
+    centers_u8 = np.clip(centers, 0, 255).astype(np.uint8)
+    centers_hsv = cv2.cvtColor(
+        centers_u8.reshape(1, -1, 3),
+        cv2.COLOR_BGR2HSV
+    )[0]
+
+    center_h = centers_hsv[:, 0].astype(float)
+    center_s = centers_hsv[:, 1].astype(float)
+    center_v = centers_hsv[:, 2].astype(float)
+
+    # 단순히 가장 큰 클러스터가 아니라
+    # 밝기와 채도까지 고려해서 꽃잎 색 후보를 고름
+    scores = counts * (0.6 + center_s / 255.0) * (0.5 + center_v / 255.0)
+
+    # 초록 계열은 강하게 패널티
+    green_center = (
+        (center_h >= 35) & (center_h <= 90) &
+        (center_s >= 35)
+    )
+    scores[green_center] *= 0.05
+
+    # 너무 어두운 중심부도 패널티
+    scores[center_v < 70] *= 0.2
+
+    dominant_idx = int(np.argmax(scores))
+    dominant_bgr = centers_u8[dominant_idx]
 
     return bgr_to_hex(dominant_bgr)
-
 
 # ============================================================
 # YOLO + Gemini 앙상블
@@ -404,15 +556,18 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
             "box2d": [100, 200, 300, 400]
         }
     ]
-
-    주의:
-    - name_en은 YOLO 모델 클래스명 기준으로 받음.
-    - 모든 box2d는 최종 API 응답에 바로 사용할 실제 이미지 픽셀 좌표로 받음.
     """
     img_pil = load_image_from_bytes(image_bytes)
     image_width, image_height = img_pil.size
 
-    results = yolo_model.predict(source=img_pil, conf=0.15)
+    results = yolo_model.predict(
+        source=img_pil,
+        conf=0.2,
+        iou=0.45,
+        agnostic_nms=True,
+        max_det=30,
+        verbose=False,
+    )
     yolo_json = get_json_for_llm(results)
 
     class_names = list(FLOWER_NAME_KO_MAP.keys())
@@ -428,33 +583,35 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
 3. YOLO JSON 기존 감지 데이터:
 {json.dumps(yolo_json, indent=2, ensure_ascii=False)}
 
-사용 가능한 꽃 클래스 목록:
+참고용 YOLO 클래스 목록:
 {json.dumps(class_names, ensure_ascii=False)}
 
 임무:
 1. 제공된 YOLO JSON의 "box_2d" 좌표는 1픽셀도 수정하지 마라.
-2. 정밀 교정:
-    - 각 박스의 꽃 이름이 정확한지 전문가의 눈으로 검수하고 교정하라.
-    - name_en은 반드시 "사용 가능한 꽃 클래스 목록" 중 하나를 그대로 사용하라.
-3. 고유 품종 필터링:
-    - 품종당 가장 형태가 분명한 대표 꽃 하나만 남겨라.
-    - 결과 리스트에는 품종당 단 하나의 객체만 존재해야 한다.
-4. 국문명:
-    - name_ko는 해당 꽃의 일반적인 국문명을 작성하라.
+2. 각 박스의 꽃 이름이 정확한지 전문가의 눈으로 검수하고 교정하라.
+3. name_en은 기본적으로 YOLO JSON의 label을 유지하라.
+4. 단, 사진상 명백히 잘못된 경우에만 꽃 이름을 교정하라.
+5. 교정할 때도 가능하면 참고용 YOLO 클래스 목록 중 하나를 사용하라.
+6. 클래스 목록에 없는 꽃 이름은 정말 확실할 때만 사용하라.
+7. name_en은 반드시 소문자 snake_case로 작성하라.
+   예: gerbera, spray_rose, white_stock, sweet_pea
+8. 색상명, 품질 표현, 장식 표현은 name_en에 넣지 마라.
+   나쁜 예: pink_gerbera, beautiful_rose, large_white_daisy
+   좋은 예: gerbera, rose, daisy
 
 출력 규칙:
 - 반드시 JSON 리스트 형식으로만 응답할 것.
 - 텍스트 설명, 인사, 마크다운 코드블록은 절대로 포함하지 말 것.
-- 각 객체는 반드시 아래 필드를 포함할 것:
+- 각 객체는 반드시 아래 필드만 포함할 것:
     - "name_ko": 최종 꽃 이름, 국문
-    - "name_en": 최종 꽃 이름, 영문 클래스명
+    - "name_en": 최종 꽃 이름, 영문 snake_case
     - "box2d": YOLO JSON의 "box_2d" 좌표를 그대로 사용한 [x1, y1, x2, y2]
 
 응답 예시:
 [
     {{
-        "name_ko": "장미",
-        "name_en": "rose",
+        "name_ko": "거베라",
+        "name_en": "gerbera",
         "box2d": [100, 200, 300, 400]
     }}
 ]
@@ -484,7 +641,7 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
         fallback_result = []
 
         for item in yolo_json:
-            name_en = str(item.get("label", "")).strip()
+            name_en = normalize_name_en(item.get("label", ""))
             name_ko = resolve_name_ko(name_en)
 
             fallback_result.append({
@@ -494,7 +651,6 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
             })
 
         return fallback_result
-
 
 # ============================================================
 # /ai/detect-flowers API에서 호출할 최종 함수
@@ -507,7 +663,6 @@ async def detect_flowers_for_api(image_bytes: bytes) -> Dict[str, List[Dict[str,
     현재 포함:
     - YOLO 1차 분류
     - Gemini 앙상블 교정
-    - 신규 꽃 탐지
     - name_ko 생성
     - name_en 생성
     - box2d 정리
@@ -524,7 +679,7 @@ async def detect_flowers_for_api(image_bytes: bytes) -> Dict[str, List[Dict[str,
     detected_objects = []
 
     for item in ensemble_result:
-        name_en = str(item.get("name_en", "")).strip()
+        name_en = normalize_name_en(item.get("name_en", ""))
         gemini_name_ko = str(item.get("name_ko", "")).strip()
 
         name_ko = resolve_name_ko(
@@ -554,7 +709,9 @@ async def detect_flowers_for_api(image_bytes: bytes) -> Dict[str, List[Dict[str,
             "color_hex": color_hex,
         })
 
+    detected_objects = dedupe_same_object(detected_objects)
+    detected_objects = dedupe_by_flower_name(detected_objects)
+
     return {
         "detected_objects": detected_objects
     }
-

@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageFont
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,14 @@ async def main():
     # bbox 확인용 이미지 생성
     image = load_image_from_bytes(image_bytes)
     draw = ImageDraw.Draw(image)
+
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/AppleSDGothicNeo.ttc", 32)  # mac
+    except IOError:
+        try:
+            font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", 32)  # windows
+        except IOError:
+            font = ImageFont.load_default()
 
     detected_objects = result.get("detected_objects", [])
 
@@ -76,15 +84,16 @@ async def main():
 
         # 라벨 그리기
         # 기본 폰트는 한글이 깨질 수 있어서 name_en 중심으로 표시
-        label = f"{idx}. {name_en} {color_hex}"
+        label = f"{idx}. {name_ko}({name_en}) {color_hex}"
 
         text_x = x1 + swatch_size + 8
-        text_y = swatch_y1 + 8
+        text_y = swatch_y1 + 2 
 
         draw.text(
             [text_x, text_y],
             label,
-            fill="red",
+            fill="black",
+            font=font,
         )
 
     image.save(ANNOTATED_IMAGE_PATH)
