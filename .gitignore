@@ -16,3 +16,5 @@ datasets/
 .env           
 .vscode/      
 .idea/        
+
+test/*
