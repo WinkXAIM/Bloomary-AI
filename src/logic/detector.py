@@ -19,7 +19,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('models/gemini-3-flash-preview')
 
 # YOLO 모델 로드
-YOLO_MODEL_PATH = os.path.join("models", "best.pt")
+YOLO_MODEL_PATH = os.path.join("models", "bouquet_yolo11s_v3_best.pt")
 yolo_model = YOLO(YOLO_MODEL_PATH)
 
 # ============================================================
@@ -344,7 +344,8 @@ def dedupe_same_object(detected_objects, iou_thresh=0.82, contain_thresh=0.90):
 def dedupe_by_flower_name(detected_objects):
     """
     같은 꽃 이름(name_en)이 여러 번 나온 경우 하나만 남김.
-    대표 박스는 bbox 면적이 가장 큰 객체로 선택.
+    대표 객체는 confidence가 가장 높은 객체로 선택.
+    confidence가 없으면 bbox 면적이 너무 큰 오탐을 피하기 위해 면적 기준은 보조로만 사용.
     """
     best_by_name = {}
 
@@ -355,14 +356,26 @@ def dedupe_by_flower_name(detected_objects):
         if not name_en or not box or len(box) != 4:
             continue
 
+        conf = obj.get("confidence")
+        conf = float(conf) if conf is not None else 0.0
+
+        area = box_area(box)
+
         if name_en not in best_by_name:
             best_by_name[name_en] = obj
             continue
 
-        current_area = box_area(box)
-        saved_area = box_area(best_by_name[name_en].get("box2d", [0, 0, 0, 0]))
+        saved = best_by_name[name_en]
+        saved_conf = saved.get("confidence")
+        saved_conf = float(saved_conf) if saved_conf is not None else 0.0
 
-        if current_area > saved_area:
+        saved_area = box_area(saved.get("box2d", [0, 0, 0, 0]))
+
+        # 1순위: confidence
+        # 2순위: 너무 큰 박스보다 적당한 꽃 박스
+        if conf > saved_conf:
+            best_by_name[name_en] = obj
+        elif conf == saved_conf and area < saved_area:
             best_by_name[name_en] = obj
 
     return list(best_by_name.values())
@@ -562,10 +575,11 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
 
     results = yolo_model.predict(
         source=img_pil,
-        conf=0.2,
-        iou=0.45,
-        agnostic_nms=True,
-        max_det=30,
+        imgsz=960,
+        conf=0.25,
+        iou=0.65,
+        agnostic_nms=False,
+        max_det=150,
         verbose=False,
     )
     yolo_json = get_json_for_llm(results)
