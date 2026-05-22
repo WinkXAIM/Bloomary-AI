@@ -10,6 +10,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 import cv2
 import numpy as np
+from src.logic.flower_mapper import get_flower_info
 
 load_dotenv()
 
@@ -19,8 +20,25 @@ genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('models/gemini-3-flash-preview')
 
 # YOLO 모델 로드
-YOLO_MODEL_PATH = os.path.join("models", "bouquet_yolo11s_v3_best.pt")
+YOLO_MODEL_PATH = os.getenv(
+    "YOLO_MODEL_PATH",
+    os.path.join("models", "bouquet_yolo11s_v3_704_best.pt")
+)
+
 yolo_model = YOLO(YOLO_MODEL_PATH)
+
+YOLO_IMG_SIZE = 704
+YOLO_CONF = 0.25
+YOLO_IOU = 0.65
+YOLO_MAX_DET = 150
+
+def get_yolo_class_names():
+    names = yolo_model.names
+
+    if isinstance(names, dict):
+        return [str(names[i]) for i in sorted(names.keys())]
+
+    return [str(name) for name in names]
 
 # ============================================================
 # YOLO 모델 88개 클래스 기준: 영문 클래스명 -> 국문명
@@ -296,6 +314,12 @@ def box_iou(a, b):
 
     return inter / union
 
+def get_internal_confidence(obj: Dict[str, Any]) -> float:
+    try:
+        return float(obj.get("_confidence") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
 def min_overlap_ratio(a, b):
     """
     작은 박스가 큰 박스 안에 거의 들어간 경우도 중복으로 보기 위한 값
@@ -344,8 +368,8 @@ def dedupe_same_object(detected_objects, iou_thresh=0.82, contain_thresh=0.90):
 def dedupe_by_flower_name(detected_objects):
     """
     같은 꽃 이름(name_en)이 여러 번 나온 경우 하나만 남김.
-    대표 객체는 confidence가 가장 높은 객체로 선택.
-    confidence가 없으면 bbox 면적이 너무 큰 오탐을 피하기 위해 면적 기준은 보조로만 사용.
+    대표 객체는 내부 confidence가 가장 높은 객체로 선택한다.
+    confidence는 API 응답에는 포함하지 않는다.
     """
     best_by_name = {}
 
@@ -356,26 +380,14 @@ def dedupe_by_flower_name(detected_objects):
         if not name_en or not box or len(box) != 4:
             continue
 
-        conf = obj.get("confidence")
-        conf = float(conf) if conf is not None else 0.0
-
-        area = box_area(box)
-
         if name_en not in best_by_name:
             best_by_name[name_en] = obj
             continue
 
-        saved = best_by_name[name_en]
-        saved_conf = saved.get("confidence")
-        saved_conf = float(saved_conf) if saved_conf is not None else 0.0
+        current_conf = get_internal_confidence(obj)
+        saved_conf = get_internal_confidence(best_by_name[name_en])
 
-        saved_area = box_area(saved.get("box2d", [0, 0, 0, 0]))
-
-        # 1순위: confidence
-        # 2순위: 너무 큰 박스보다 적당한 꽃 박스
-        if conf > saved_conf:
-            best_by_name[name_en] = obj
-        elif conf == saved_conf and area < saved_area:
+        if current_conf > saved_conf:
             best_by_name[name_en] = obj
 
     return list(best_by_name.values())
@@ -575,16 +587,16 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
 
     results = yolo_model.predict(
         source=img_pil,
-        imgsz=960,
-        conf=0.25,
-        iou=0.65,
+        imgsz=YOLO_IMG_SIZE,
+        conf=YOLO_CONF,
+        iou=YOLO_IOU,
         agnostic_nms=False,
-        max_det=150,
+        max_det=YOLO_MAX_DET,
         verbose=False,
     )
     yolo_json = get_json_for_llm(results)
 
-    class_names = list(FLOWER_NAME_KO_MAP.keys())
+    class_names = get_yolo_class_names()
 
     prompt = f"""
 역할: 너는 20년 경력의 수석 플로리스트이자 시각 지능 전문가야.
@@ -620,6 +632,7 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
     - "name_ko": 최종 꽃 이름, 국문
     - "name_en": 최종 꽃 이름, 영문 snake_case
     - "box2d": YOLO JSON의 "box_2d" 좌표를 그대로 사용한 [x1, y1, x2, y2]
+    - "confidence": YOLO JSON의 "confidence" 값을 그대로 사용
 
 응답 예시:
 [
@@ -627,6 +640,7 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
         "name_ko": "거베라",
         "name_en": "gerbera",
         "box2d": [100, 200, 300, 400]
+        "confidence": 0.87
     }}
 ]
 """
@@ -662,6 +676,7 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
                 "name_ko": name_ko,
                 "name_en": name_en,
                 "box2d": item.get("box_2d", []),
+                "confidence": item.get("confidence"),
             })
 
         return fallback_result
@@ -673,17 +688,6 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
 async def detect_flowers_for_api(image_bytes: bytes) -> Dict[str, List[Dict[str, Any]]]:
     """
     /ai/detect-flowers API 응답 형태로 반환하는 최종 로직.
-
-    현재 포함:
-    - YOLO 1차 분류
-    - Gemini 앙상블 교정
-    - name_ko 생성
-    - name_en 생성
-    - box2d 정리
-    - 대표 색상 color_hex 추출
-
-    추후 연결:
-    - meaning은 개별 꽃말 매핑 함수가 완성되면 채울 예정입니다.
     """
     img_pil = load_image_from_bytes(image_bytes)
     image_width, image_height = img_pil.size
@@ -715,16 +719,30 @@ async def detect_flowers_for_api(image_bytes: bytes) -> Dict[str, List[Dict[str,
             box2d=box2d,
         )
 
+        flower_info = get_flower_info(
+            name_en=name_en,
+            name_ko=name_ko,
+        )
+
         detected_objects.append({
-            "name_ko": name_ko,
-            "name_en": name_en,
-            "meaning": "",
+            "name_ko": flower_info.get("name_ko") or name_ko,
+            "name_en": flower_info.get("name_en") or name_en,
+            "meaning": flower_info.get("meaning") or "",
             "box2d": box2d,
             "color_hex": color_hex,
+            "_confidence": item.get("confidence"),
         })
+
+    detected_objects.sort(
+        key=lambda obj: get_internal_confidence(obj),
+        reverse=True,
+    )
 
     detected_objects = dedupe_same_object(detected_objects)
     detected_objects = dedupe_by_flower_name(detected_objects)
+    
+    for obj in detected_objects:
+        obj.pop("_confidence", None)
 
     return {
         "detected_objects": detected_objects

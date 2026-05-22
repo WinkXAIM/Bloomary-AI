@@ -7,7 +7,7 @@ torch
 torchvision
 torchaudio
 
-opencv-python
+opencv-python-headless
 numpy
 pillow
 

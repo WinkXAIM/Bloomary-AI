@@ -12,7 +12,7 @@ sys.path.append(str(PROJECT_ROOT))
 from src.logic.detector import detect_flowers_for_api, load_image_from_bytes
 
 
-TEST_IMAGE_PATH = Path(__file__).parent / "test_bouquet.jpeg"
+TEST_IMAGE_PATH = Path(__file__).parent / "test.jpeg"
 ANNOTATED_IMAGE_PATH = Path(__file__).parent / "annotated_result.jpg"
 
 
