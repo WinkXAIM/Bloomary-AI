@@ -3,7 +3,7 @@ import os
 import google.generativeai as genai
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("models/gemini-3.1-flash-lite")
 
 
 def combine_floriography(flowers: list[dict]) -> dict:
