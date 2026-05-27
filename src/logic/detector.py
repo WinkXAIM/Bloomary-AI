@@ -412,9 +412,12 @@ def extract_dominant_flower_color_hex(
     1. bbox crop 후 가장자리 영역을 일부 제거해 배경/포장지 영향을 줄인다.
     2. 중앙부 타원 마스크를 적용해 꽃 영역 후보를 우선적으로 사용한다.
     3. HSV 기준으로 초록색 계열과 너무 어두운 픽셀을 제거한다.
-    4. 흰색/크림색 꽃은 채도가 낮고 밝기가 높은 픽셀을 우선 사용해 median 색상을 반환한다.
-    5. 일반 색상 꽃은 유효 픽셀에 k-means를 적용한다.
-    6. 클러스터 크기, 채도, 밝기를 함께 고려해 대표색을 선택하고 HEX로 반환한다.
+    4. 흰색/크림색 예외 처리 전에 채도 높은 컬러 픽셀을 먼저 검사한다.
+    5. 파란 안개꽃처럼 bbox 안에 흰 꽃이 같이 들어간 경우에도
+    채도 높은 컬러 픽셀이 충분하면 해당 컬러를 우선 반환한다.
+    6. 채도 높은 컬러 픽셀이 부족한 경우에만 흰색/크림색 꽃 예외 처리를 수행한다.
+    7. 일반 색상 꽃은 유효 픽셀에 k-means를 적용한다.
+    8. 클러스터 크기, 채도, 밝기를 함께 고려해 대표색을 선택하고 HEX로 반환한다.
     """
     image_rgb = np.array(image_pil.convert("RGB"))
     image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
@@ -480,14 +483,96 @@ def extract_dominant_flower_color_hex(
     if np.count_nonzero(base_mask) < 50:
         base_mask = v >= 45
 
-    # 흰색 / 크림색 꽃 예외 처리
-    # 채도 낮고 밝은 픽셀을 꽃잎 후보로 봄
+    base_count = np.count_nonzero(base_mask)
+
+    if base_count < 30:
+        return None
+
+    # ============================================================
+    # 1순위: 채도 높은 컬러 픽셀 우선 처리
+    # ============================================================
+    # 파란 안개꽃처럼 작은 컬러 꽃이 bbox 안에 있고,
+    # 흰 꽃/밝은 배경이 같이 들어간 경우를 보정한다.
+    colored_mask = (
+        base_mask &
+        (~green_mask) &
+        (s >= 70) &
+        (v >= 70)
+    )
+
+    colored_count = np.count_nonzero(colored_mask)
+
+    # 전체 base 픽셀 중 컬러 픽셀이 조금이라도 의미 있게 있으면
+    # 흰색 예외 처리보다 컬러 클러스터를 우선한다.
+    if colored_count >= max(60, int(base_count * 0.035)):
+        valid_pixels = crop[colored_mask]
+
+        max_pixels = 8000
+        if len(valid_pixels) > max_pixels:
+            indices = np.random.choice(len(valid_pixels), max_pixels, replace=False)
+            valid_pixels = valid_pixels[indices]
+
+        data = np.float32(valid_pixels)
+
+        actual_k = min(k, len(data))
+        if actual_k <= 0:
+            return None
+
+        cv2.setRNGSeed(42)
+
+        criteria = (
+            cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+            30,
+            1.0,
+        )
+
+        _, labels, centers = cv2.kmeans(
+            data,
+            actual_k,
+            None,
+            criteria,
+            5,
+            cv2.KMEANS_PP_CENTERS,
+        )
+
+        labels = labels.flatten()
+        counts = np.bincount(labels, minlength=actual_k).astype(float)
+
+        centers_u8 = np.clip(centers, 0, 255).astype(np.uint8)
+        centers_hsv = cv2.cvtColor(
+            centers_u8.reshape(1, -1, 3),
+            cv2.COLOR_BGR2HSV
+        )[0]
+
+        center_h = centers_hsv[:, 0].astype(float)
+        center_s = centers_hsv[:, 1].astype(float)
+        center_v = centers_hsv[:, 2].astype(float)
+
+        scores = counts * (0.8 + center_s / 255.0) * (0.6 + center_v / 255.0)
+
+        # 혹시 남아 있는 초록 계열은 패널티
+        green_center = (
+            (center_h >= 35) & (center_h <= 90) &
+            (center_s >= 35)
+        )
+        scores[green_center] *= 0.05
+
+        # 너무 어두운 중심부도 패널티
+        scores[center_v < 70] *= 0.2
+
+        dominant_idx = int(np.argmax(scores))
+        dominant_bgr = centers_u8[dominant_idx]
+
+        return bgr_to_hex(dominant_bgr)
+
+    # ============================================================
+    # 2순위: 흰색 / 크림색 꽃 예외 처리
+    # ============================================================
     white_mask = base_mask & (s <= 65) & (v >= 145)
 
-    if np.count_nonzero(white_mask) >= max(80, int(np.count_nonzero(base_mask) * 0.18)):
+    if np.count_nonzero(white_mask) >= max(80, int(base_count * 0.18)):
         white_pixels = crop[white_mask]
 
-        # 너무 어두운 흰색 그림자는 제외하고 밝은 쪽 픽셀만 사용
         white_hsv = cv2.cvtColor(
             white_pixels.reshape(-1, 1, 3),
             cv2.COLOR_BGR2HSV
@@ -500,6 +585,9 @@ def extract_dominant_flower_color_hex(
             median_bgr = np.median(white_pixels, axis=0).astype(np.uint8)
             return bgr_to_hex(median_bgr)
 
+    # ============================================================
+    # 3순위: 일반 대표색 k-means 처리
+    # ============================================================
     valid_pixels = crop[base_mask]
 
     if len(valid_pixels) < 30:
@@ -546,8 +634,6 @@ def extract_dominant_flower_color_hex(
     center_s = centers_hsv[:, 1].astype(float)
     center_v = centers_hsv[:, 2].astype(float)
 
-    # 단순히 가장 큰 클러스터가 아니라
-    # 밝기와 채도까지 고려해서 꽃잎 색 후보를 고름
     scores = counts * (0.6 + center_s / 255.0) * (0.5 + center_v / 255.0)
 
     # 초록 계열은 강하게 패널티
