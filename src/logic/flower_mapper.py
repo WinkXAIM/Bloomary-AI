@@ -1,70 +1,39 @@
 import json
-from functools import lru_cache
 from pathlib import Path
-
-FLOWER_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "floriography.json"
-
-
-@lru_cache(maxsize=1)
-def _load_db() -> dict[str, dict]:
-    if not FLOWER_DB_PATH.exists():
-        raise FileNotFoundError(
-            f"꽃말 DB를 찾을 수 없습니다: {FLOWER_DB_PATH}\n"
-            "data/floriography.json 파일이 data/ 폴더에 있는지 확인해주세요."
-        )
-
-    with open(FLOWER_DB_PATH, encoding="utf-8") as f:
-        raw: dict[str, list[str]] = json.load(f)
-
-    return {
-        name_en.strip().lower(): {
-            "name_ko": "",
-            "name_en": name_en.strip().lower(),
-            "meaning": ", ".join(meanings) if isinstance(meanings, list) else str(meanings or ""),
-        }
-        for name_en, meanings in raw.items()
-        if str(name_en or "").strip()
-    }
+from typing import List, Dict, Any
 
 
-def map_flowers_from_yolo(yolo_names: list[str]) -> list[dict]:
-    db = _load_db()
-    result = []
+BASE_DIR = Path(__file__).resolve().parents[2]
+FLOWER_DATA_PATH = BASE_DIR / "data" / "floriography.json"
 
-    for raw_name in yolo_names:
-        key = raw_name.strip().lower()
-        entry = db.get(key)
 
-        if entry:
-            result.append({
-                "name_ko": entry["name_ko"],
-                "name_en": entry["name_en"],
-                "meaning": entry["meaning"],
+def load_flower_data() -> Dict[str, Any]:
+    with open(FLOWER_DATA_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+FLOWER_DATA = load_flower_data()
+
+
+def map_flower_meanings(flower_names: List[str]) -> List[Dict[str, str]]:
+    results = []
+
+    for flower_name in flower_names:
+        normalized_name = flower_name.strip().lower()
+        flower_info = FLOWER_DATA.get(normalized_name)
+
+        if not flower_info:
+            results.append({
+                "name_ko": flower_name,
+                "name_en": flower_name,
+                "meaning": ""
             })
-        else:
-            result.append({
-                "name_ko": raw_name,
-                "name_en": raw_name,
-                "meaning": "",
-            })
+            continue
 
-    return result
+        results.append({
+            "name_ko": flower_info.get("name_ko", flower_name),
+            "name_en": flower_info.get("name_en", flower_name),
+            "meaning": flower_info.get("meaning", "")
+        })
 
-def get_flower_info(name_en: str, name_ko: str = "") -> dict:
-    db = _load_db()
-
-    key = str(name_en or "").strip().lower()
-    entry = db.get(key)
-
-    if entry:
-        return {
-            "name_ko": entry.get("name_ko") or name_ko or name_en,
-            "name_en": entry.get("name_en", name_en),
-            "meaning": entry.get("meaning", ""),
-        }
-
-    return {
-        "name_ko": name_ko or name_en,
-        "name_en": name_en,
-        "meaning": "",
-    }
+    return results
