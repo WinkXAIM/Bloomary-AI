@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import cv2
 import numpy as np
 from src.logic.flower_mapper import get_flower_info
+from src.logic.llm_handler import attach_contextual_meanings
 
 load_dotenv()
 
@@ -85,6 +86,7 @@ FLOWER_NAME_KO_MAP = {
     "gazania": "가자니아",
     "gentian": "용담",
     "geranium": "제라늄",
+    "gerbera": "거베라",
     "gladiolus": "글라디올러스",
     "globe_thistle": "에키놉스",
     "gloriosa_lily": "글로리오사",
@@ -829,6 +831,14 @@ async def detect_flowers_for_api(image_bytes: bytes) -> Dict[str, List[Dict[str,
     
     for obj in detected_objects:
         obj.pop("_confidence", None)
+
+    try:
+        detected_objects = await asyncio.to_thread(
+            attach_contextual_meanings,
+            detected_objects,
+        )
+    except Exception as e:
+        print(f"꽃말 보정 중 에러 발생. 기존 꽃말로 대체: {e}")
 
     return {
         "detected_objects": detected_objects

@@ -21,8 +21,8 @@ app = FastAPI()
 
 
 class FlowerForCombination(BaseModel):
-    name_ko: str = Field(..., alias="nameKo")
-    name_en: str = Field(..., alias="nameEn")
+    name_ko: str = Field(..., alias="NameKo")
+    name_en: str = Field(..., alias="NameEn")
     meaning: str
 
 
