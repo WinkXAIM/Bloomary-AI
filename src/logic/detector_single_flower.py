@@ -2,6 +2,7 @@ import json
 import io
 import os
 import math
+from pathlib import Path
 from PIL import Image, ImageOps, ImageDraw, ImageFont
 from ultralytics import YOLO
 import google.generativeai as genai
@@ -14,28 +15,65 @@ import numpy as np
 from src.logic.flower_mapper import get_flower_info
 from src.logic.llm_handler import attach_contextual_meanings
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_project_path(path_value: str) -> Path:
+    path = Path(path_value)
+
+    if path.is_absolute():
+        return path
+
+    return PROJECT_ROOT / path
+
 
 # 제미나이 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel('models/gemini-3-flash-preview')
 
-# YOLO 모델 로드
-YOLO_MODEL_PATH = os.getenv(
-    "YOLO_MODEL_PATH",
-    os.path.join("models", "single_baseline.pt")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY가 .env에 없습니다.")
+
+genai.configure(api_key=GEMINI_API_KEY)
+
+gemini_model = genai.GenerativeModel(
+    os.getenv("GEMINI_MODEL_NAME", "models/gemini-3-flash-preview")
 )
 
-yolo_model = YOLO(YOLO_MODEL_PATH)
 
-YOLO_IMG_SIZE = 704
-# single-class flower 후보 생성 모델 기준 기본값
-# UI에 직접 그리는 값이 아니라 Gemini에 넘길 후보를 만드는 값
-YOLO_CONF = 0.30
-YOLO_IOU = 0.40
-YOLO_MAX_DET = 100
-GEMINI_MAX_CANDIDATES = 24
+# YOLO 모델 로드
+YOLO_MODEL_PATH = _resolve_project_path(
+    os.getenv(
+        "YOLO_MODEL_PATH",
+        "models/single_flower_yolo11m_v1_1024_fitblack_3x_best.pt",
+    )
+)
+
+if not YOLO_MODEL_PATH.exists():
+    raise FileNotFoundError(f"YOLO 모델 파일을 찾을 수 없습니다: {YOLO_MODEL_PATH}")
+
+yolo_model = YOLO(str(YOLO_MODEL_PATH))
+
+YOLO_DEVICE = os.getenv("YOLO_DEVICE", "cpu")
+YOLO_IMG_SIZE = _env_int("YOLO_IMG_SIZE", 1024)
+YOLO_CONF = _env_float("YOLO_CONF", 0.25)
+YOLO_IOU = _env_float("YOLO_IOU", 0.45)
+YOLO_MAX_DET = _env_int("YOLO_MAX_DET", 80)
+GEMINI_MAX_CANDIDATES = _env_int("GEMINI_MAX_CANDIDATES", 28)
 
 
 def get_yolo_class_names():
@@ -47,9 +85,8 @@ def get_yolo_class_names():
     return [str(name) for name in names]
 
 def is_single_flower_yolo() -> bool:
-    """현재 로드된 YOLO가 flower 단일 클래스 모델인지 확인."""
-    class_names = [normalize_name_en(name) for name in get_yolo_class_names()]
-    return len(class_names) == 1 and class_names[0] == "flower"
+    """현재 로드된 YOLO가 단일 클래스 꽃송이 후보 모델인지 확인."""
+    return len(get_yolo_class_names()) == 1
 
 def get_reference_flower_names() -> List[str]:
     """Gemini가 참고할 꽃 이름 후보 목록."""
@@ -260,7 +297,10 @@ def parse_gemini_json_list(text: str) -> List[Dict[str, Any]]:
 # YOLO 결과를 Gemini 프롬프트용 JSON으로 변환
 # ============================================================
 
-def get_json_for_llm(results: Any) -> List[Dict[str, Any]]:
+def get_json_for_llm(
+    results: Any,
+    single_flower_mode: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
     """
     Ultralytics YOLO 결과를 Gemini에게 넘길 JSON 형태로 변환.
 
@@ -274,6 +314,9 @@ def get_json_for_llm(results: Any) -> List[Dict[str, Any]]:
     ]
     """
     yolo_json = []
+
+    if single_flower_mode is None:
+        single_flower_mode = is_single_flower_yolo()
 
     for result in results:
         boxes = getattr(result, "boxes", None)
@@ -290,7 +333,7 @@ def get_json_for_llm(results: Any) -> List[Dict[str, Any]]:
             if getattr(box, "conf", None) is not None:
                 confidence = float(box.conf[0].detach().cpu().item())
 
-            label = str(names[class_id])
+            label = "flower" if single_flower_mode else str(names[class_id])
 
             yolo_json.append({
                 "label": label,
@@ -405,7 +448,38 @@ def filter_yolo_json_for_llm(
         reverse=True,
     )
 
-    return filtered[:max_candidates]
+    deduped = []
+
+    for item in filtered:
+        box = item.get("box_2d", [])
+
+        if not box or len(box) != 4:
+            continue
+
+        duplicate = False
+
+        for kept in deduped:
+            kept_box = kept.get("box_2d", [])
+
+            if not kept_box or len(kept_box) != 4:
+                continue
+
+            if (
+                box_iou(box, kept_box) >= 0.62 or
+                min_overlap_ratio(box, kept_box) >= 0.82
+            ):
+                duplicate = True
+                break
+
+        if duplicate:
+            continue
+
+        deduped.append(item)
+
+        if len(deduped) >= max_candidates:
+            break
+
+    return deduped
 
 
 def make_crop_grid_for_gemini(
@@ -915,12 +989,16 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
         imgsz=YOLO_IMG_SIZE,
         conf=YOLO_CONF,
         iou=YOLO_IOU,
-        agnostic_nms=False,
+        agnostic_nms=True,
         max_det=YOLO_MAX_DET,
+        device=YOLO_DEVICE,
         verbose=False,
     )
 
-    yolo_json = get_json_for_llm(results)
+    yolo_json = get_json_for_llm(
+        results,
+        single_flower_mode=single_flower_mode,
+    )
 
     # crop grid가 너무 복잡해지면 Gemini가 더 헷갈린다.
     # single-class / multi-class 상관없이 최종 후보 수를 줄인다.
@@ -939,7 +1017,7 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
         yolo_json=yolo_json,
         cell_size=180,
         cols=4,
-        crop_padding_ratio=0.18,
+        crop_padding_ratio=0.12,
     )
 
     if not gemini_candidates:
@@ -966,7 +1044,7 @@ async def analyze_flower_ensemble(image_bytes: bytes) -> List[Dict[str, Any]]:
 중요 전제:
 - crop grid 이미지에서 각 칸 왼쪽 위의 #번호가 candidate_id다.
 - 후보 JSON의 candidate_id와 crop grid의 #번호는 같은 후보를 의미한다.
-- YOLO JSON의 label이 "flower"라면 이것은 꽃 이름이 아니라 개별 꽃송이 위치 후보라는 뜻이다.
+- YOLO JSON의 label이 "flower" 또는 "item"이라면 이것은 꽃 이름이 아니라 개별 꽃송이 위치 후보라는 뜻이다.
 - YOLO는 꽃 이름을 확정하지 않는다.
 - 전체 원본 이미지는 맥락 확인용이고, 꽃 이름 판단은 crop grid를 우선 사용한다.
 - 후보 JSON의 box_2d 좌표는 직접 수정하지 않는다. 너는 candidate_id만 고른다.
