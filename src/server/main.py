@@ -116,9 +116,9 @@ async def detect_flowers(image: UploadFile = File(...)):
 
     if len(image_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(
-            status_code=413,
+            status_code=400,
             detail={
-                "error_code": "FILE_TOO_LARGE",
+                "error_code": "INVALID_REQUEST",
                 "message": "이미지 파일이 너무 큽니다.",
             },
         )
@@ -128,20 +128,25 @@ async def detect_flowers(image: UploadFile = File(...)):
             detect_flowers_for_api(image_bytes),
             timeout=IMAGE_PROCESSING_TIMEOUT_SECONDS,
         )
+
     except asyncio.TimeoutError:
         logger.exception("AI 처리 시간 초과")
         raise HTTPException(
-            status_code=504,
+            status_code=422,
             detail={
-                "error_code": "AI_PROCESSING_TIMEOUT",
+                "error_code": "AI_PROCESSING_ERROR",
                 "message": "AI 처리 시간이 초과되었습니다.",
             },
         )
+
     except Exception as e:
         logger.exception("AI 처리 실패: %s", e)
         raise HTTPException(
             status_code=422,
-            detail={"error_code": "AI_PROCESSING_ERROR", "message": str(e)},
+            detail={
+                "error_code": "AI_PROCESSING_ERROR",
+                "message": "AI 모델 처리 중 오류가 발생했습니다.",
+            },
         )
 
     return JSONResponse(content=result)

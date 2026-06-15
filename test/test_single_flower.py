@@ -37,7 +37,7 @@ if not model_path.exists():
 import src.logic.detector_single_flower as detector
 from src.logic.detector_single_flower import detect_flowers_for_api, load_image_from_bytes
 
-TEST_IMAGE_PATH = Path(__file__).parent / "test_3.jpeg"
+TEST_IMAGE_PATH = Path(__file__).parent / "test.jpeg"
 ANNOTATED_IMAGE_PATH = Path(__file__).parent / "annotated_result.jpg"
 RESULT_JSON_PATH = Path(__file__).parent / "detect_result.json"
 
