@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from src.logic.detector import detect_flowers_for_api
+from src.logic.detector_single_flower import detect_flowers_for_api
 from src.logic.llm_handler import combine_floriography, recommend_bouquet
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -19,10 +19,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+MAX_IMAGE_BYTES = 12 * 1024 * 1024
+IMAGE_PROCESSING_TIMEOUT_SECONDS = 120
 
 class FlowerForCombination(BaseModel):
-    name_ko: str = Field(..., alias="NameKo")
-    name_en: str = Field(..., alias="NameEn")
+    name_ko: str = Field(..., alias="nameKo")
+    name_en: str = Field(..., alias="nameEn")
     meaning: str
 
 
@@ -47,6 +49,9 @@ def raise_invalid_request(message: str) -> None:
         detail={"error_code": "INVALID_REQUEST", "message": message},
     )
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -109,8 +114,29 @@ async def detect_flowers(image: UploadFile = File(...)):
             detail={"error_code": "INVALID_REQUEST", "message": "빈 파일입니다."},
         )
 
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error_code": "FILE_TOO_LARGE",
+                "message": "이미지 파일이 너무 큽니다.",
+            },
+        )
+
     try:
-        result = await detect_flowers_for_api(image_bytes)
+        result = await asyncio.wait_for(
+            detect_flowers_for_api(image_bytes),
+            timeout=IMAGE_PROCESSING_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.exception("AI 처리 시간 초과")
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "error_code": "AI_PROCESSING_TIMEOUT",
+                "message": "AI 처리 시간이 초과되었습니다.",
+            },
+        )
     except Exception as e:
         logger.exception("AI 처리 실패: %s", e)
         raise HTTPException(

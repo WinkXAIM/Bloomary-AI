@@ -4,32 +4,40 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from PIL import ImageDraw, ImageFont
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-# ============================================================
-# detector import 전에 YOLO 모델 경로 지정
-# ============================================================
+ENV_PATH = PROJECT_ROOT / ".env"
+load_dotenv(ENV_PATH)
 
-SINGLE_FLOWER_MODEL_PATH = PROJECT_ROOT / "models" / "single_baseline.pt"
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH")
 
-if not SINGLE_FLOWER_MODEL_PATH.exists():
-    raise FileNotFoundError(
-        f"YOLO 모델 파일을 찾을 수 없습니다:\n{SINGLE_FLOWER_MODEL_PATH}\n\n"
-        f"Colab에서 학습한 best.pt를 아래 위치로 복사하세요:\n"
-        f"{SINGLE_FLOWER_MODEL_PATH}"
+if not YOLO_MODEL_PATH:
+    raise RuntimeError(
+        ".env에 YOLO_MODEL_PATH가 없습니다.\n"
+        "예:\n"
+        "YOLO_MODEL_PATH=models/single_flower_yolo11m_v1_1024_fitblack_3x_best.pt"
     )
 
-os.environ["YOLO_MODEL_PATH"] = str(SINGLE_FLOWER_MODEL_PATH)
+model_path = Path(YOLO_MODEL_PATH)
+
+if not model_path.is_absolute():
+    model_path = PROJECT_ROOT / model_path
+
+if not model_path.exists():
+    raise FileNotFoundError(
+        f"YOLO 모델 파일을 찾을 수 없습니다:\n{model_path}\n\n"
+        ".env의 YOLO_MODEL_PATH를 확인하거나, models 폴더에 best.pt를 복사하세요."
+    )
 
 import src.logic.detector_single_flower as detector
 from src.logic.detector_single_flower import detect_flowers_for_api, load_image_from_bytes
 
-
-TEST_IMAGE_PATH = Path(__file__).parent / "test4.jpeg"
+TEST_IMAGE_PATH = Path(__file__).parent / "test_3.jpeg"
 ANNOTATED_IMAGE_PATH = Path(__file__).parent / "annotated_result.jpg"
 RESULT_JSON_PATH = Path(__file__).parent / "detect_result.json"
 
@@ -87,7 +95,7 @@ async def main():
     if not TEST_IMAGE_PATH.exists():
         raise FileNotFoundError(
             f"테스트 이미지를 찾을 수 없습니다: {TEST_IMAGE_PATH}\n"
-            f"test 폴더 안에 test_1.jpeg 파일을 넣어주세요."
+            f"test 폴더 안에 테스트 할 이미지 파일을 넣어주세요."
         )
 
     with open(TEST_IMAGE_PATH, "rb") as f:
